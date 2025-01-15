@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+	<title>Pengti</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.87.0/phaser.min.js"></script>
+	<script>
+let config = {
+   type: Phaser.AUTO,
+   width: 800,
+   height: 450,
+   scene: {
+       preload: preload,
+       create: create,
+       update: update
+   }
+};
+
+let game = new Phaser.Game(config);
+
+let player1, player2;
+let player1_x = 32, player1_y=225;
+let player2_x=768,player2_y=225;
+
+let players_w = 16, players_h = 96;
+
+let ball;
+let ball_x=400, ball_y=225;
+let ball_w=16, ball_h=16;
+
+let ball_x_dir=1, ball_y_dir=1;
+
+let win_h=450, win_w=800;
+
+function preload ()
+{
+
+}
+
+function create ()
+{
+	player1 = this.add.rectangle(player1_x, player1_y, players_w, players_h, 0xffffff);
+	player2 = this.add.rectangle(player2_x, player2_y, players_w, players_h, 0xffffff);
+	ball = this.add.rectangle(ball_x, ball_y, ball_w, ball_h, 0xffff00);
+}
+
+function update ()
+{
+	ball.y += ball_y_dir;
+	ball.x += ball_x_dir;
+
+	if (ball.y > win_h || ball.y < 0){
+		ball_y_dir *= -1;
+	}
+	if(ball.x>win_w || ball.x<0){
+		ball_x_dir *= -1;
+	}
+
+}
+
+</script>
+</head>
+<body>
+	
+</body>
+</html>
