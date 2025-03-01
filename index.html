@@ -1,0 +1,195 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Pong Multiplayer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.87.0/phaser.min.js"></script>
+    <audio id="game-music" src="Bola de Drac - Millor del mon.ogg" volume="0.5" loop></audio>
+    <script>
+        let player_num = 0;
+        const ws = new WebSocket('ws://192.168.1.133:7777');
+        const win_w = 800, win_h = 450;
+        const players_w = 16, players_h = 96;
+        const player1_x = 32, player1_y = 225;
+        const player2_x = 768, player2_y = 225;
+        const ball_x_init = 400, ball_y_init = 225;
+        const ball_w = 16, ball_h = 16;
+        let player1, player2;
+        let player1_score = 0, player2_score = 0;
+        let player1_score_text, player2_score_text;
+        let ball;
+        let ball_x_dir = 1, ball_y_dir = 1;
+        let game_start = false;
+        let game_over = false;
+        let game_over_text;
+        let countdown_text;
+        let connection_text;
+        let observer_text;
+        const gameMusic = document.getElementById('game-music');
+        gameMusic.volume = 0.5;
+
+        ws.onmessage = function (msg) {
+            const data = JSON.parse(msg.data);
+            if (data.player_num !== undefined) {
+                player_num = data.player_num;
+                if (player_num === 1) {
+                    connection_text.setText("Jugador 1 conectado").setVisible(true);
+                } else if (player_num === 2) {
+                    connection_text.setText("Jugador 2 conectado").setVisible(true);
+                }
+            } else if (data.countdown !== undefined) {
+                connection_text.setVisible(false);
+                countdown_text.setText(data.countdown).setVisible(true);
+                if (data.countdown === 1) {
+                    setTimeout(() => {
+                        countdown_text.setVisible(false);
+                        gameMusic.play();
+                    }, 1000);
+                }
+            } else if (data.game_start !== undefined) {
+                game_start = true;
+                game_over = false;
+                countdown_text.setVisible(false);
+                gameMusic.play();
+            } else if (data.y !== undefined) {
+                if (player_num === 1) player2.y = data.y;
+                else if (player_num === 2) player1.y = data.y;
+                else if (player_num === 0) {
+                    if (data.player === 1) player1.y = data.y;
+                    else if (data.player === 2) player2.y = data.y;
+                }
+            } else if (data.bx !== undefined) {
+                ball.x = data.bx;
+                ball.y = data.by;
+            } else if (data.score1 !== undefined) {
+                player1_score = data.score1;
+                player2_score = data.score2;
+                player1_score_text.setText(player1_score);
+                player2_score_text.setText(player2_score);
+
+                if (player1_score >= 3 || player2_score >= 3) {
+                    game_over = true;
+                    gameMusic.pause();
+                    const winner = player1_score >= 3 ? 1 : 2;
+                    ws.send(JSON.stringify({ game_over: true, winner: winner }));
+                }
+            } else if (data.game_over !== undefined) {
+                game_over = true;
+                gameMusic.pause();
+                if (data.winner === player_num) {
+                    game_over_text.setText("¡Has ganado!").setColor("#00ff00").setVisible(true);
+                } else if (data.winner !== undefined) {
+                    if (player_num === 0) {
+                        game_over_text.setText("Ha ganado el jugador " + data.winner).setColor("#ffff00").setFontSize(48).setVisible(true);
+                    } else {
+                        game_over_text.setText("Has perdido").setColor("#ff0000").setVisible(true);
+                    }
+                }
+            } else if (data.reset !== undefined) {
+                game_start = false;
+                game_over = false;
+                player1_score = 0;
+                player2_score = 0;
+                player1_score_text.setText("0");
+                player2_score_text.setText("0");
+                ball_reset();
+                game_over_text.setVisible(false);
+            } else if (data.message !== undefined) {
+                if (data.message === "You are a spectator") {
+                    observer_text.setText("Observador").setVisible(true);
+                }
+            }
+        };
+
+        const config = {
+            type: Phaser.AUTO,
+            width: win_w,
+            height: win_h,
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        const game = new Phaser.Game(config);
+
+        function preload() {}
+
+        function create() {
+            player1 = this.add.rectangle(player1_x, player1_y, players_w, players_h, 0xffffff);
+            player2 = this.add.rectangle(player2_x, player2_y, players_w, players_h, 0xffffff);
+            ball = this.add.rectangle(ball_x_init, ball_y_init, ball_w, ball_h, 0xffff00);
+            player1_score_text = this.add.text(player1_x, 20, "0", { fontFamily: 'Arial', fontSize: 32, color: '#ffffff' });
+            player2_score_text = this.add.text(player2_x - 32, 20, "0", { fontFamily: 'Arial', fontSize: 32, color: '#ffffff' });
+            game_over_text = this.add.text(win_w / 2, win_h / 2, "", { fontFamily: 'Comic Sans MS', fontSize: 96, color: '#ff0000' }).setOrigin(0.5, 0.5);
+            countdown_text = this.add.text(win_w / 2, win_h / 2, "", { fontFamily: 'Comic Sans MS', fontSize: 96, color: '#ffffff' }).setOrigin(0.5, 0.5);
+            connection_text = this.add.text(win_w / 2, win_h / 2, "", { fontFamily: 'Comic Sans MS', fontSize: 48, color: '#ffffff' }).setOrigin(0.5, 0.5);
+            observer_text = this.add.text(win_w / 2, win_h - 50, "", { fontFamily: 'Comic Sans MS', fontSize: 48, color: '#ffffff' }).setOrigin(0.5, 0.5);
+            this.cursors = this.input.keyboard.createCursorKeys();
+            get_ball_direction();
+        }
+
+        function get_ball_direction() {
+            let angle = Phaser.Math.Between(-75, 75);
+            if (Math.abs(angle) < 10) angle += (angle < 0 ? -10 : 10);
+            angle = Phaser.Math.DegToRad(angle);
+            ball_x_dir = Math.cos(angle) * (Math.random() < 0.5 ? -1 : 1);
+            ball_y_dir = Math.sin(angle);
+        }
+
+        function ball_reset() {
+            ball.x = ball_x_init;
+            ball.y = ball_y_init;
+            get_ball_direction();
+        }
+
+        function update() {
+            if (!game_start || player_num === 0 || game_over) return;
+
+            if (player_num === 1) {
+                ball.x += ball_x_dir;
+                ball.y += ball_y_dir;
+
+                if (ball.x > win_w) {
+                    player1_score++;
+                    player1_score_text.setText(player1_score);
+                    ws.send(JSON.stringify({ score1: player1_score, score2: player2_score }));
+                    ball_reset();
+                }
+                if (ball.x < 0) {
+                    player2_score++;
+                    player2_score_text.setText(player2_score);
+                    ws.send(JSON.stringify({ score1: player1_score, score2: player2_score }));
+                    ball_reset();
+                }
+
+                if (ball.y > win_h || ball.y < 0) ball_y_dir = -ball_y_dir;
+
+                if (Phaser.Geom.Intersects.RectangleToRectangle(ball.getBounds(), player1.getBounds())) {
+                    if (ball_x_dir < 0) ball_x_dir = Math.abs(ball_x_dir);
+                }
+                if (Phaser.Geom.Intersects.RectangleToRectangle(ball.getBounds(), player2.getBounds())) {
+                    if (ball_x_dir > 0) ball_x_dir = -Math.abs(ball_x_dir);
+                }
+
+                ws.send(JSON.stringify({ bx: ball.x, by: ball.y }));
+            }
+
+            if (this.cursors.up.isDown) {
+                if (player_num === 1) player1.y = Math.max(player1.y - 2, players_h / 2);
+                else if (player_num === 2) player2.y = Math.max(player2.y - 2, players_h / 2);
+            }
+
+            if (this.cursors.down.isDown) {
+                if (player_num === 1) player1.y = Math.min(player1.y + 2, win_h - players_h / 2);
+                else if (player_num === 2) player2.y = Math.min(player2.y + 2, win_h - players_h / 2);
+            }
+
+            ws.send(JSON.stringify({ y: player_num === 1 ? player1.y : player2.y, player: player_num }));
+        }
+    </script>
+</head>
+<body>
+</body>
+</html>
